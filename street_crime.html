@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="initial-scale=1.0">
+    <meta charset="utf-8">
+    <title>Street Crime</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <style>
+        /* Always set the map height explicitly to define the size of the div
+         * element that contains the map. */
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        /* Optional: Makes the sample page fill the window. */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+        }
+        .form{
+            position: absolute;
+            z-index: 1000;
+            width: 300px;
+            padding: 25px;
+            background-color: indianred;
+            display: grid;
+            border-radius: 5px;
+            margin: auto auto;
+            left: 0;
+            right: 0;
+            top: 62px;
+            transition: transform 0.5s;
+        }
+        button{
+            margin-top: 10px;
+            border-radius: 5px;
+            border: 1px solid white;
+            background: none;
+            color: white;
+        }
+        input{
+            margin-top: 10px;
+            border-radius: 5px;
+            border: none;
+            padding-left: 5px;
+        }
+        h1{
+            font-size: 23px;
+            color: white;
+        }
+        #new-search{
+            position: absolute;
+            transform: rotateX(90deg);
+            transition: transform 0.5s;
+            color: white;
+            background-color: indianred;
+            border-radius: 5px;
+            margin: auto auto;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <button id="new-search">New Search</button>
+    <div id="error"></div>
+    <div id="form" class="form">
+        <h1>Search area for crime: </h1>
+        <input  type="number" name="year" id="year" placeholder="Year (2016+)">
+        <input type="text" name="location" id="location" placeholder="Location (England)">
+        <button id="search">Search</button>
+    </div>
+
+<div id="map">
+
+</div>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.0/jquery.min.js"></script>
+<script>
+
+    document.getElementById('new-search').addEventListener('click', function(){
+        document.getElementById('form').style.transform = 'rotateX(0)';
+        document.getElementById('new-search').style.transform = 'rotateX(90deg)';
+    });
+
+
+    function initMap(){
+        //INSTANTIATE GOOGLE MAPS//
+        var map;
+        var geocoder = new google.maps.Geocoder();
+        var userIcon;
+
+        //GET USER COORDINATES
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(showUserLocation);
+
+        } else {
+            showUserLocation({
+                position:{
+                    coords:{
+                        latitude: '51.5074',
+                        longitude: '0.1278'
+                    }
+                }
+            });
+        }
+
+        //DRAW MAP WITH USER LOCATION//
+        function showUserLocation(position){
+            var userCoords = {
+                lat:parseFloat(position.coords.latitude),
+                lng:parseFloat(position.coords.longitude)
+            };
+            var options = {
+                zoom:14,
+                center:userCoords
+            };
+            map = new google.maps.Map(document.getElementById('map'), options);
+            userIcon = new google.maps.Marker({
+                position:userCoords,
+                icon:{
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 5
+                },
+                map:map
+            });
+
+            //GET USER INPUT//
+            $('#search').click(function(){
+                document.getElementById('form').style.transform = 'rotateX(90deg)';
+                document.getElementById('new-search').style.transform = 'rotateX(0)';
+                var year = $('#year').val();
+                var location = $('#location').val();
+                processUserInput(year, location);
+            });
+
+            //PROCESS USER INPUT//
+            function processUserInput(year, location){
+                geocoder.geocode( { 'address': location}, function(results, status) {
+                    if (status === 'OK') {
+                        map.setCenter(results[0].geometry.location);
+                        locationIcon = new google.maps.Marker({
+                            map: map,
+                            position: results[0].geometry.location
+                        });
+                        console.log(results[0].geometry);
+                        requestData(results[0].geometry.location.lat(), results[0].geometry.location.lng(), year)
+                    } else {
+                        alert('Geocode was not successful for the following reason: ' + status);
+                    }
+                });
+            }
+
+            //REQUEST CRIME DATA//
+            function requestData(lat, lng, year){
+                for(i=1; i<13; i++){
+                    var url = 'https://data.police.uk/api/crimes-street/all-crime?lat=' + lat +'&lng=' + lng +'&date=' + year + '-' + i;
+                    var request = new XMLHttpRequest();
+                    request.onreadystatechange = function(){
+                        if (this.readyState === 4 && this.status === 200){
+                            crimeData = JSON.parse(this.responseText);
+                            showLocalCrime(crimeData)
+                        }
+                    };
+                    request.open('GET', url, true);
+                    request.send();
+                }
+            }
+
+            //DISPLAY CRIME DATA//
+            function showLocalCrime (crimeData) {
+                for(i=0; i<crimeData.length; i++){
+                    makeMarker({
+                        coords:{
+                            lat:parseFloat(crimeData[i].location.latitude),
+                            lng:parseFloat(crimeData[i].location.longitude)
+                        },
+                        content:{
+                            category:crimeData[i].category,
+                            exactLocation:crimeData[i].location.street.name
+                        }
+                    })
+                }
+            }
+
+            //MAKE MARKER FUNCTION//
+            function makeMarker(props){
+                var marker = new google.maps.Marker({
+                    position: props.coords,
+                    map:map
+                });
+                if(props.content.category){
+                    var infoWindow = new google.maps.InfoWindow({
+                        content: props.content.category + '<br>' + props.content.exactLocation
+                    });
+                }else{
+                    var infoWindow = new google.maps.InfoWindow({
+                        content: 'Type of crime unknown'
+                    });
+                }
+                marker.addListener('click', function(){
+                    infoWindow.open(map, marker)
+                });
+                console.log(this);
+            }
+
+        }
+    }
+
+
+
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDFQUTr11lC9rNoT6w3ICjjzDdkCZb6d-E&callback=initMap"
+        async defer></script>
+</body>
+</html>
